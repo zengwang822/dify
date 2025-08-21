@@ -13,6 +13,44 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 新增步骤：下载缺失的 Dockerfile 文件
+    - name: Download missing Dockerfiles
+      run: |
+        echo "下载缺失的 Dockerfile 文件..."
+        
+        # 创建 docker 目录（如果不存在）
+        mkdir -p docker
+        
+        # 下载 Dockerfile.api
+        if [ ! -f "docker/Dockerfile.api" ]; then
+          echo "下载 Dockerfile.api..."
+          curl -o docker/Dockerfile.api https://raw.githubusercontent.com/langgenius/dify/main/Dockerfile.api
+        else
+          echo "Dockerfile.api 已存在"
+        fi
+        
+        # 下载 Dockerfile.web
+        if [ ! -f "docker/Dockerfile.web" ]; then
+          echo "下载 Dockerfile.web..."
+          curl -o docker/Dockerfile.web https://raw.githubusercontent.com/langgenius/dify/main/Dockerfile.web
+        else
+          echo "Dockerfile.web 已存在"
+        fi
+        
+        # 下载 Dockerfile.worker
+        if [ ! -f "docker/Dockerfile.worker" ]; then
+          echo "下载 Dockerfile.worker..."
+          curl -o docker/Dockerfile.worker https://raw.githubusercontent.com/langgenius/dify/main/Dockerfile.worker
+        else
+          echo "Dockerfile.worker 已存在"
+        fi
+        
+        # 验证下载的文件
+        echo "验证下载的文件:"
+        ls -la docker/
+        echo "Dockerfile.api 前几行:"
+        head -n 5 docker/Dockerfile.api || echo "无法读取 Dockerfile.api"
+
     # 添加调试步骤 - 检查仓库结构
     - name: Debug - Check repository structure
       run: |
