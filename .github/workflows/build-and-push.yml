@@ -1,0 +1,51 @@
+name: Build and Push Dify Images to GHCR
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GHCR_TOKEN }}
+
+    - name: Build and push API image
+      run: |
+        docker build -t ghcr.io/${{ github.repository_owner }}/dify-api:latest -f docker/Dockerfile.api .
+        docker push ghcr.io/${{ github.repository_owner }}/dify-api:latest
+
+    - name: Build and push Web image
+      run: |
+        docker build -t ghcr.io/${{ github.repository_owner }}/dify-web:latest -f docker/Dockerfile.web .
+        docker push ghcr.io/${{ github.repository_owner }}/dify-web:latest
+
+    - name: Build and push Worker image
+      run: |
+        docker build -t ghcr.io/${{ github.repository_owner }}/dify-worker:latest -f docker/Dockerfile.worker .
+        docker push ghcr.io/${{ github.repository_owner }}/dify-worker:latest
+
+    - name: Pull and push base images
+      run: |
+        # 拉取基础镜像并推送到 GHCR
+        docker pull nginx:alpine
+        docker tag nginx:alpine ghcr.io/${{ github.repository_owner }}/nginx:alpine
+        docker push ghcr.io/${{ github.repository_owner }}/nginx:alpine
+
+        docker pull postgres:13
+        docker tag postgres:13 ghcr.io/${{ github.repository_owner }}/postgres:13
+        docker push ghcr.io/${{ github.repository_owner }}/postgres:13
+
+        docker pull redis:6-alpine
+        docker tag redis:6-alpine ghcr.io/${{ github.repository_owner }}/redis:6-alpine
+        docker push ghcr.io/${{ github.repository_owner }}/redis:6-alpine
