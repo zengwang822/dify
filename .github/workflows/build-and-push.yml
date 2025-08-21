@@ -26,13 +26,42 @@ jobs:
         
         echo "官方仓库克隆完成，开始同步必要文件..."
         
+        # 检查官方仓库中是否有 docker 目录
+        echo "官方仓库目录结构:"
+        ls -la official-repo/
+        
         # 同步 docker 目录
         if [ -d "official-repo/docker" ]; then
           echo "同步 docker 目录..."
-          rm -rf docker  # 删除现有的 docker 目录（如果有）
+          echo "官方 docker 目录内容:"
+          ls -la official-repo/docker/
+          
+          # 删除现有的 docker 目录（如果有）
+          if [ -d "docker" ]; then
+            rm -rf docker
+          fi
+          
+          # 复制 docker 目录
           cp -r official-repo/docker ./
+          
+          echo "同步后的 docker 目录内容:"
+          ls -la docker/
+          
+          # 特别检查 Dockerfile.api
+          if [ -f "docker/Dockerfile.api" ]; then
+            echo "Dockerfile.api 内容预览:"
+            head -n 5 docker/Dockerfile.api
+          else
+            echo "错误: Dockerfile.api 不存在于 docker 目录中"
+            echo "官方 docker 目录中的文件:"
+            ls -la official-repo/docker/
+            exit 1
+          fi
         else
-          echo "警告: 官方仓库中没有 docker 目录"
+          echo "错误: 官方仓库中没有 docker 目录"
+          echo "官方仓库内容:"
+          ls -la official-repo/
+          exit 1
         fi
         
         # 同步根目录下的必要文件
@@ -45,23 +74,34 @@ jobs:
           fi
         done
         
-        # 同步 api 目录（如果需要）
-        if [ -d "official-repo/api" ] && [ ! -d "api" ]; then
-          echo "同步 api 目录..."
-          cp -r official-repo/api ./
-        fi
-        
-        # 验证同步的文件
-        echo "同步完成，验证文件结构..."
-        echo "当前目录:"
-        ls -la
-        echo "docker 目录:"
-        ls -la docker/
-        
         # 清理临时目录
         rm -rf official-repo
         
         echo "文件同步完成"
+
+    # 添加验证步骤，确保文件存在
+    - name: Verify files exist
+      run: |
+        echo "验证必要文件是否存在..."
+        if [ -f "docker/Dockerfile.api" ]; then
+          echo "✓ Dockerfile.api 存在"
+          echo "文件大小: $(wc -l < docker/Dockerfile.api) 行"
+        else
+          echo "✗ Dockerfile.api 不存在"
+          exit 1
+        fi
+        
+        if [ -f "docker/Dockerfile.web" ]; then
+          echo "✓ Dockerfile.web 存在"
+        else
+          echo "✗ Dockerfile.web 不存在"
+        fi
+        
+        if [ -f "docker/Dockerfile.worker" ]; then
+          echo "✓ Dockerfile.worker 存在"
+        else
+          echo "✗ Dockerfile.worker 不存在"
+        fi
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -71,8 +111,10 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Build and push API image
-      working-directory: ./
       run: |
+        echo "当前工作目录: $(pwd)"
+        echo "docker 目录内容:"
+        ls -la docker/
         docker build -t ghcr.io/${{ github.repository_owner }}/dify-api:latest -f docker/Dockerfile.api .
         docker push ghcr.io/${{ github.repository_owner }}/dify-api:latest
 
@@ -99,4 +141,4 @@ jobs:
 
         docker pull redis:6-alpine
         docker tag redis:6-alpine ghcr.io/${{ github.repository_owner }}/redis:6-alpine
-        docker push ghcr.io/${{ github.repository_owner }}/redis:6-alpine  # 修复了这里的语法错误
+        docker push ghcr.io/${{ github.repository_owner }}/redis:6-alpine
