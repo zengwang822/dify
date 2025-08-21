@@ -99,4 +99,4 @@ jobs:
 
         docker pull redis:6-alpine
         docker tag redis:6-alpine ghcr.io/${{ github.repository_owner }}/redis:6-alpine
-        docker push ghcr.io/${{ github.repository_owner }]/redis:6-alpine
+        docker push ghcr.io/${{ github.repository_owner }}/redis:6-alpine  # 修复了这里的语法错误
