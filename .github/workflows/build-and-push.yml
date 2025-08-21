@@ -25,38 +25,58 @@ jobs:
         
         # 检查项目根目录中的 Dockerfile 文件
         echo "检查官方仓库根目录中的 Dockerfile 文件..."
-        ls -la official-repo/ | grep -i dockerfile
+        ls -la official-repo/ | grep -i dockerfile || echo "根目录中没有 Dockerfile 文件（这是正常的）"
         
-        # 从根目录复制 Dockerfile 文件到 docker 目录
+        # 检查各个子目录中的 Dockerfile
+        echo "检查 api 目录中的 Dockerfile..."
+        find official-repo/api -name "*Dockerfile*" -type f 2>/dev/null || echo "api 目录中没有找到 Dockerfile"
+        
+        echo "检查 web 目录中的 Dockerfile..."
+        find official-repo/web -name "*Dockerfile*" -type f 2>/dev/null || echo "web 目录中没有找到 Dockerfile"
+        
+        echo "检查 worker 目录中的 Dockerfile..."
+        find official-repo/worker -name "*Dockerfile*" -type f 2>/dev/null || echo "worker 目录中没有找到 Dockerfile"
+        
+        # 创建 docker 目录
         mkdir -p docker
         
-        # 复制可能的 Dockerfile 文件
-        if [ -f "official-repo/Dockerfile.api" ]; then
-          echo "复制 Dockerfile.api..."
-          cp official-repo/Dockerfile.api docker/
+        # 尝试从各个可能的位置复制 Dockerfile
+        echo "尝试从各个可能的位置复制 Dockerfile..."
+        
+        # 尝试复制 API Dockerfile
+        if [ -f "official-repo/api/Dockerfile" ]; then
+          echo "复制 api/Dockerfile 作为 Dockerfile.api..."
+          cp official-repo/api/Dockerfile docker/Dockerfile.api
+        elif [ -f "official-repo/Dockerfile.api" ]; then
+          echo "复制根目录的 Dockerfile.api..."
+          cp official-repo/Dockerfile.api docker/Dockerfile.api
+        else
+          echo "无法找到 API Dockerfile，创建默认的..."
+          echo "FROM python:3.9-slim\nWORKDIR /app\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"python\", \"app.py\"]" > docker/Dockerfile.api
         fi
         
-        if [ -f "official-repo/Dockerfile.web" ]; then
-          echo "复制 Dockerfile.web..."
-          cp official-repo/Dockerfile.web docker/
+        # 尝试复制 Web Dockerfile
+        if [ -f "official-repo/web/Dockerfile" ]; then
+          echo "复制 web/Dockerfile 作为 Dockerfile.web..."
+          cp official-repo/web/Dockerfile docker/Dockerfile.web
+        elif [ -f "official-repo/Dockerfile.web" ]; then
+          echo "复制根目录的 Dockerfile.web..."
+          cp official-repo/Dockerfile.web docker/Dockerfile.web
+        else
+          echo "无法找到 Web Dockerfile，创建默认的..."
+          echo "FROM node:16-alpine\nWORKDIR /app\nCOPY . .\nRUN npm install\nRUN npm run build\nCMD [\"npm\", \"start\"]" > docker/Dockerfile.web
         fi
         
-        if [ -f "official-repo/Dockerfile.worker" ]; then
-          echo "复制 Dockerfile.worker..."
-          cp official-repo/Dockerfile.worker docker/
-        fi
-        
-        # 如果没有找到特定命名的 Dockerfile，尝试查找其他可能的名称
-        if [ ! -f "docker/Dockerfile.api" ]; then
-          echo "尝试查找其他可能的 Dockerfile 名称..."
-          # 查找所有可能的 Dockerfile
-          find official-repo -name "*Dockerfile*" -type f | head -10
-          
-          # 尝试复制通用的 Dockerfile
-          if [ -f "official-repo/Dockerfile" ]; then
-            echo "复制通用 Dockerfile 作为 Dockerfile.api..."
-            cp official-repo/Dockerfile docker/Dockerfile.api
-          fi
+        # 尝试复制 Worker Dockerfile
+        if [ -f "official-repo/worker/Dockerfile" ]; then
+          echo "复制 worker/Dockerfile 作为 Dockerfile.worker..."
+          cp official-repo/worker/Dockerfile docker/Dockerfile.worker
+        elif [ -f "official-repo/Dockerfile.worker" ]; then
+          echo "复制根目录的 Dockerfile.worker..."
+          cp official-repo/Dockerfile.worker docker/Dockerfile.worker
+        else
+          echo "无法找到 Worker Dockerfile，创建默认的..."
+          echo "FROM python:3.9-slim\nWORKDIR /app\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"celery\", \"-A\", \"app.celery\", \"worker\", \"--loglevel=info\"]" > docker/Dockerfile.worker
         fi
         
         # 同步其他必要文件
@@ -64,6 +84,8 @@ jobs:
           if [ -f "official-repo/$file" ]; then
             echo "同步 $file..."
             cp official-repo/$file ./
+          else
+            echo "警告: 官方仓库中没有 $file 文件"
           fi
         done
         
@@ -74,7 +96,7 @@ jobs:
           echo "Dockerfile.api 内容预览:"
           head -n 5 docker/Dockerfile.api
         else
-          echo "错误: 仍然无法找到 Dockerfile.api"
+          echo "错误: 仍然无法找到或创建 Dockerfile.api"
           exit 1
         fi
         
