@@ -13,95 +13,73 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        # 确保检出完整的提交历史，以便后续比较
         fetch-depth: 0
 
-    # 新增步骤：克隆官方仓库并同步必要文件
-    - name: Sync with official repository
+    # 修改步骤：从正确位置获取 Dockerfile 文件
+    - name: Get Dockerfiles from correct locations
       run: |
-        echo "正在克隆官方 Dify 仓库..."
+        echo "正在从正确位置获取 Dockerfile 文件..."
         
         # 克隆官方仓库到临时目录
         git clone https://github.com/langgenius/dify.git official-repo
         
-        echo "官方仓库克隆完成，开始同步必要文件..."
+        # 检查项目根目录中的 Dockerfile 文件
+        echo "检查官方仓库根目录中的 Dockerfile 文件..."
+        ls -la official-repo/ | grep -i dockerfile
         
-        # 检查官方仓库中是否有 docker 目录
-        echo "官方仓库目录结构:"
-        ls -la official-repo/
+        # 从根目录复制 Dockerfile 文件到 docker 目录
+        mkdir -p docker
         
-        # 同步 docker 目录
-        if [ -d "official-repo/docker" ]; then
-          echo "同步 docker 目录..."
-          echo "官方 docker 目录内容:"
-          ls -la official-repo/docker/
-          
-          # 删除现有的 docker 目录（如果有）
-          if [ -d "docker" ]; then
-            rm -rf docker
-          fi
-          
-          # 复制 docker 目录
-          cp -r official-repo/docker ./
-          
-          echo "同步后的 docker 目录内容:"
-          ls -la docker/
-          
-          # 特别检查 Dockerfile.api
-          if [ -f "docker/Dockerfile.api" ]; then
-            echo "Dockerfile.api 内容预览:"
-            head -n 5 docker/Dockerfile.api
-          else
-            echo "错误: Dockerfile.api 不存在于 docker 目录中"
-            echo "官方 docker 目录中的文件:"
-            ls -la official-repo/docker/
-            exit 1
-          fi
-        else
-          echo "错误: 官方仓库中没有 docker 目录"
-          echo "官方仓库内容:"
-          ls -la official-repo/
-          exit 1
+        # 复制可能的 Dockerfile 文件
+        if [ -f "official-repo/Dockerfile.api" ]; then
+          echo "复制 Dockerfile.api..."
+          cp official-repo/Dockerfile.api docker/
         fi
         
-        # 同步根目录下的必要文件
+        if [ -f "official-repo/Dockerfile.web" ]; then
+          echo "复制 Dockerfile.web..."
+          cp official-repo/Dockerfile.web docker/
+        fi
+        
+        if [ -f "official-repo/Dockerfile.worker" ]; then
+          echo "复制 Dockerfile.worker..."
+          cp official-repo/Dockerfile.worker docker/
+        fi
+        
+        # 如果没有找到特定命名的 Dockerfile，尝试查找其他可能的名称
+        if [ ! -f "docker/Dockerfile.api" ]; then
+          echo "尝试查找其他可能的 Dockerfile 名称..."
+          # 查找所有可能的 Dockerfile
+          find official-repo -name "*Dockerfile*" -type f | head -10
+          
+          # 尝试复制通用的 Dockerfile
+          if [ -f "official-repo/Dockerfile" ]; then
+            echo "复制通用 Dockerfile 作为 Dockerfile.api..."
+            cp official-repo/Dockerfile docker/Dockerfile.api
+          fi
+        fi
+        
+        # 同步其他必要文件
         for file in uv.lock pyproject.toml; do
           if [ -f "official-repo/$file" ]; then
             echo "同步 $file..."
             cp official-repo/$file ./
-          else
-            echo "警告: 官方仓库中没有 $file 文件"
           fi
         done
         
-        # 清理临时目录
-        rm -rf official-repo
-        
-        echo "文件同步完成"
-
-    # 添加验证步骤，确保文件存在
-    - name: Verify files exist
-      run: |
-        echo "验证必要文件是否存在..."
+        # 验证获取的文件
+        echo "验证获取的文件:"
+        ls -la docker/
         if [ -f "docker/Dockerfile.api" ]; then
-          echo "✓ Dockerfile.api 存在"
-          echo "文件大小: $(wc -l < docker/Dockerfile.api) 行"
+          echo "Dockerfile.api 内容预览:"
+          head -n 5 docker/Dockerfile.api
         else
-          echo "✗ Dockerfile.api 不存在"
+          echo "错误: 仍然无法找到 Dockerfile.api"
           exit 1
         fi
         
-        if [ -f "docker/Dockerfile.web" ]; then
-          echo "✓ Dockerfile.web 存在"
-        else
-          echo "✗ Dockerfile.web 不存在"
-        fi
-        
-        if [ -f "docker/Dockerfile.worker" ]; then
-          echo "✓ Dockerfile.worker 存在"
-        else
-          echo "✗ Dockerfile.worker 不存在"
-        fi
+        # 清理临时目录
+        rm -rf official-repo
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -130,7 +108,6 @@ jobs:
 
     - name: Pull and push base images
       run: |
-        # 拉取基础镜像并推送到 GHCR
         docker pull nginx:alpine
         docker tag nginx:alpine ghcr.io/${{ github.repository_owner }}/nginx:alpine
         docker push ghcr.io/${{ github.repository_owner }}/nginx:alpine
