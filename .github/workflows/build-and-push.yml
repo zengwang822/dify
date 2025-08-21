@@ -15,7 +15,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    # 修改步骤：从正确位置获取 Dockerfile 文件
+    # 获取 Dockerfile 文件
     - name: Get Dockerfiles from correct locations
       run: |
         echo "正在从正确位置获取 Dockerfile 文件..."
@@ -23,66 +23,52 @@ jobs:
         # 克隆官方仓库到临时目录
         git clone https://github.com/langgenius/dify.git official-repo
         
-        # 检查项目根目录中的 Dockerfile 文件
-        echo "检查官方仓库根目录中的 Dockerfile 文件..."
-        ls -la official-repo/ | grep -i dockerfile || echo "根目录中没有 Dockerfile 文件（这是正常的）"
-        
-        # 检查各个子目录中的 Dockerfile
-        echo "检查 api 目录中的 Dockerfile..."
-        find official-repo/api -name "*Dockerfile*" -type f 2>/dev/null || echo "api 目录中没有找到 Dockerfile"
-        
-        echo "检查 web 目录中的 Dockerfile..."
-        find official-repo/web -name "*Dockerfile*" -type f 2>/dev/null || echo "web 目录中没有找到 Dockerfile"
-        
-        echo "检查 worker 目录中的 Dockerfile..."
-        find official-repo/worker -name "*Dockerfile*" -type f 2>/dev/null || echo "worker 目录中没有找到 Dockerfile"
-        
         # 创建 docker 目录
         mkdir -p docker
         
-        # 尝试从各个可能的位置复制 Dockerfile
-        echo "尝试从各个可能的位置复制 Dockerfile..."
-        
-        # 尝试复制 API Dockerfile
+        # 复制 Dockerfile 文件
         if [ -f "official-repo/api/Dockerfile" ]; then
           echo "复制 api/Dockerfile 作为 Dockerfile.api..."
           cp official-repo/api/Dockerfile docker/Dockerfile.api
-        elif [ -f "official-repo/Dockerfile.api" ]; then
-          echo "复制根目录的 Dockerfile.api..."
-          cp official-repo/Dockerfile.api docker/Dockerfile.api
-        else
-          echo "无法找到 API Dockerfile，创建默认的..."
-          echo "FROM python:3.9-slim\nWORKDIR /app\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"python\", \"app.py\"]" > docker/Dockerfile.api
         fi
         
-        # 尝试复制 Web Dockerfile
         if [ -f "official-repo/web/Dockerfile" ]; then
           echo "复制 web/Dockerfile 作为 Dockerfile.web..."
           cp official-repo/web/Dockerfile docker/Dockerfile.web
-        elif [ -f "official-repo/Dockerfile.web" ]; then
-          echo "复制根目录的 Dockerfile.web..."
-          cp official-repo/Dockerfile.web docker/Dockerfile.web
-        else
-          echo "无法找到 Web Dockerfile，创建默认的..."
-          echo "FROM node:16-alpine\nWORKDIR /app\nCOPY . .\nRUN npm install\nRUN npm run build\nCMD [\"npm\", \"start\"]" > docker/Dockerfile.web
         fi
         
-        # 尝试复制 Worker Dockerfile
         if [ -f "official-repo/worker/Dockerfile" ]; then
           echo "复制 worker/Dockerfile 作为 Dockerfile.worker..."
           cp official-repo/worker/Dockerfile docker/Dockerfile.worker
-        elif [ -f "official-repo/Dockerfile.worker" ]; then
-          echo "复制根目录的 Dockerfile.worker..."
-          cp official-repo/Dockerfile.worker docker/Dockerfile.worker
-        else
-          echo "无法找到 Worker Dockerfile，创建默认的..."
-          echo "FROM python:3.9-slim\nWORKDIR /app\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"celery\", \"-A\", \"app.celery\", \"worker\", \"--loglevel=info\"]" > docker/Dockerfile.worker
         fi
         
-        # 同步其他必要文件
+        # 复制 entrypoint.sh
+        if [ -f "official-repo/docker/entrypoint.sh" ]; then
+          echo "复制 entrypoint.sh..."
+          cp official-repo/docker/entrypoint.sh docker/
+          chmod +x docker/entrypoint.sh
+        else
+          echo "创建默认的 entrypoint.sh..."
+          echo '#!/bin/bash
+set -e
+
+# 等待数据库就绪
+if [ "$WAIT_FOR_DB" = "true" ]; then
+  until pg_isready -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER; do
+    echo "等待数据库连接..."
+    sleep 1
+  done
+fi
+
+# 执行主命令
+exec "$@"' > docker/entrypoint.sh
+          chmod +x docker/entrypoint.sh
+        fi
+        
+        # 复制其他必要文件
         for file in uv.lock pyproject.toml; do
           if [ -f "official-repo/$file" ]; then
-            echo "同步 $file..."
+            echo "复制 $file..."
             cp official-repo/$file ./
           else
             echo "警告: 官方仓库中没有 $file 文件"
@@ -92,16 +78,40 @@ jobs:
         # 验证获取的文件
         echo "验证获取的文件:"
         ls -la docker/
-        if [ -f "docker/Dockerfile.api" ]; then
-          echo "Dockerfile.api 内容预览:"
-          head -n 5 docker/Dockerfile.api
-        else
-          echo "错误: 仍然无法找到或创建 Dockerfile.api"
-          exit 1
-        fi
+        ls -la uv.lock pyproject.toml 2>/dev/null || echo "uv.lock 或 pyproject.toml 不存在"
         
         # 清理临时目录
         rm -rf official-repo
+
+    # 验证所有必要文件都存在
+    - name: Verify all required files exist
+      run: |
+        echo "验证所有必要文件是否存在..."
+        
+        required_files=(
+          "docker/Dockerfile.api"
+          "docker/Dockerfile.web"
+          "docker/Dockerfile.worker"
+          "docker/entrypoint.sh"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✓ $file 存在"
+          else
+            echo "✗ $file 不存在"
+            exit 1
+          fi
+        done
+        
+        # uv.lock 和 pyproject.toml 是可选的，但最好有
+        for file in uv.lock pyproject.toml; do
+          if [ -f "$file" ]; then
+            echo "✓ $file 存在"
+          else
+            echo "警告: $file 不存在，可能会影响构建"
+          fi
+        done
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -115,6 +125,8 @@ jobs:
         echo "当前工作目录: $(pwd)"
         echo "docker 目录内容:"
         ls -la docker/
+        echo "根目录内容:"
+        ls -la | grep -E "(uv.lock|pyproject.toml)"
         docker build -t ghcr.io/${{ github.repository_owner }}/dify-api:latest -f docker/Dockerfile.api .
         docker push ghcr.io/${{ github.repository_owner }}/dify-api:latest
 
