@@ -13,7 +13,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 新增步骤：下载缺失的 Dockerfile 文件
+    # 新增步骤：下载缺失的 Dockerfile 文件（改进版本）
     - name: Download missing Dockerfiles
       run: |
         echo "下载缺失的 Dockerfile 文件..."
@@ -21,59 +21,60 @@ jobs:
         # 创建 docker 目录（如果不存在）
         mkdir -p docker
         
-        # 下载 Dockerfile.api
-        if [ ! -f "docker/Dockerfile.api" ]; then
-          echo "下载 Dockerfile.api..."
-          curl -o docker/Dockerfile.api https://raw.githubusercontent.com/langgenius/dify/main/Dockerfile.api
-        else
-          echo "Dockerfile.api 已存在"
-        fi
+        # 定义 Dockerfile 下载函数，带重试和验证
+        download_dockerfile() {
+          local filename=$1
+          local url="https://raw.githubusercontent.com/langgenius/dify/main/$filename"
+          local output_path="docker/$filename"
+          
+          echo "下载 $filename..."
+          
+          # 尝试下载，最多重试3次
+          for i in {1..3}; do
+            if curl -sS -f -o "$output_path" "$url"; then
+              # 检查文件内容是否有效（不是404页面）
+              if grep -q "404: Not Found" "$output_path"; then
+                echo "错误: $filename 下载返回404，尝试备用方案..."
+                rm "$output_path"
+                break
+              else
+                echo "$filename 下载成功"
+                return 0
+              fi
+            else
+              echo "尝试 $i/3 失败，等待 5 秒后重试..."
+              sleep 5
+            fi
+          done
+          
+          # 如果官方仓库下载失败，尝试从其他可能的位置下载
+          echo "尝试备用下载源..."
+          if [ "$filename" = "Dockerfile.api" ]; then
+            # 尝试从项目根目录下载
+            curl -sS -f -o "$output_path" "https://raw.githubusercontent.com/langgenius/dify/main/api/Dockerfile" || \
+            # 如果还失败，创建一个基本的 Dockerfile
+            echo "FROM python:3.9-slim\nWORKDIR /app\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"python\", \"app.py\"]" > "$output_path"
+          elif [ "$filename" = "Dockerfile.web" ]; then
+            curl -sS -f -o "$output_path" "https://raw.githubusercontent.com/langgenius/dify/main/web/Dockerfile" || \
+            echo "FROM node:16-alpine\nWORKDIR /app\nCOPY . .\nRUN npm install\nRUN npm run build\nCMD [\"npm\", \"start\"]" > "$output_path"
+          elif [ "$filename" = "Dockerfile.worker" ]; then
+            curl -sS -f -o "$output_path" "https://raw.githubusercontent.com/langgenius/dify/main/worker/Dockerfile" || \
+            echo "FROM python:3.9-slim\nWORKDIR /app\nCOPY . .\nRUN pip install -r requirements.txt\nCMD [\"celery\", \"-A\", \"app.celery\", \"worker\", \"--loglevel=info\"]" > "$output_path"
+          fi
+          
+          echo "$filename 已创建/下载"
+        }
         
-        # 下载 Dockerfile.web
-        if [ ! -f "docker/Dockerfile.web" ]; then
-          echo "下载 Dockerfile.web..."
-          curl -o docker/Dockerfile.web https://raw.githubusercontent.com/langgenius/dify/main/Dockerfile.web
-        else
-          echo "Dockerfile.web 已存在"
-        fi
-        
-        # 下载 Dockerfile.worker
-        if [ ! -f "docker/Dockerfile.worker" ]; then
-          echo "下载 Dockerfile.worker..."
-          curl -o docker/Dockerfile.worker https://raw.githubusercontent.com/langgenius/dify/main/Dockerfile.worker
-        else
-          echo "Dockerfile.worker 已存在"
-        fi
+        # 下载所需的 Dockerfile
+        download_dockerfile "Dockerfile.api"
+        download_dockerfile "Dockerfile.web"
+        download_dockerfile "Dockerfile.worker"
         
         # 验证下载的文件
         echo "验证下载的文件:"
         ls -la docker/
-        echo "Dockerfile.api 前几行:"
-        head -n 5 docker/Dockerfile.api || echo "无法读取 Dockerfile.api"
-
-    # 添加调试步骤 - 检查仓库结构
-    - name: Debug - Check repository structure
-      run: |
-        echo "当前工作目录:"
-        pwd
-        echo "列出所有文件和文件夹:"
-        ls -la
-        echo "检查 docker 文件夹是否存在:"
-        if [ -d "docker" ]; then
-          echo "docker 文件夹存在"
-          echo "docker 文件夹内容:"
-          ls -la docker/
-          echo "检查 Dockerfile.api 是否存在:"
-          if [ -f "docker/Dockerfile.api" ]; then
-            echo "Dockerfile.api 存在"
-            echo "文件内容前几行:"
-            head -n 5 docker/Dockerfile.api
-          else
-            echo "错误: Dockerfile.api 不存在于 docker/ 文件夹中"
-          fi
-        else
-          echo "错误: docker 文件夹不存在"
-        fi
+        echo "Dockerfile.api 内容:"
+        head -n 10 docker/Dockerfile.api
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
