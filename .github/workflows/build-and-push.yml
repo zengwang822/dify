@@ -21,6 +21,7 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Build and push API image
+      working-directory: ./ 
       run: |
         docker build -t ghcr.io/${{ github.repository_owner }}/dify-api:latest -f docker/Dockerfile.api .
         docker push ghcr.io/${{ github.repository_owner }}/dify-api:latest
