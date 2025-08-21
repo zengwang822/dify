@@ -13,6 +13,30 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # 添加调试步骤 - 检查仓库结构
+    - name: Debug - Check repository structure
+      run: |
+        echo "当前工作目录:"
+        pwd
+        echo "列出所有文件和文件夹:"
+        ls -la
+        echo "检查 docker 文件夹是否存在:"
+        if [ -d "docker" ]; then
+          echo "docker 文件夹存在"
+          echo "docker 文件夹内容:"
+          ls -la docker/
+          echo "检查 Dockerfile.api 是否存在:"
+          if [ -f "docker/Dockerfile.api" ]; then
+            echo "Dockerfile.api 存在"
+            echo "文件内容前几行:"
+            head -n 5 docker/Dockerfile.api
+          else
+            echo "错误: Dockerfile.api 不存在于 docker/ 文件夹中"
+          fi
+        else
+          echo "错误: docker 文件夹不存在"
+        fi
+
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
       with:
@@ -21,7 +45,7 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
 
     - name: Build and push API image
-      working-directory: ./ 
+      working-directory: ./
       run: |
         docker build -t ghcr.io/${{ github.repository_owner }}/dify-api:latest -f docker/Dockerfile.api .
         docker push ghcr.io/${{ github.repository_owner }}/dify-api:latest
